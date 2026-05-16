@@ -74,5 +74,5 @@ ogre_config_framework(RenderSystem_GL)
 
 ogre_config_plugin(RenderSystem_GL)
 install(FILES ${HEADER_FILES} ${GLSUPPORT_HEADERS} DESTINATION include/OGRE/RenderSystems/GL)
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/glad DESTINATION include/OGRE/RenderSystems/glad)
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/KHR DESTINATION include/OGRE/RenderSystems/KHR)
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/glad DESTINATION include/OGRE/)
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/KHR DESTINATION include/OGRE/)
