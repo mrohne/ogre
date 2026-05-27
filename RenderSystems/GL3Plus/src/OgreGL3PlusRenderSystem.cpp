@@ -1400,8 +1400,7 @@ namespace Ogre {
         mCurrentContext = mMainContext;
 
         // Set primary context as active
-        if (mCurrentContext)
-            mCurrentContext->setCurrent();
+        mCurrentContext->setCurrent();
 
         // Initialise GL3W
         if (gl3wInit2(get_proc)) { // gl3wInit() fails if GL3.0 is not supported

@@ -203,7 +203,13 @@ namespace Ogre
             if( opt != end )
             {
                 LogManager::getSingleton().logMessage("Mac Cocoa Window: Rendering on an external NSWindow*");
-                mWindow = (__bridge NSWindow*)reinterpret_cast<void*>(StringConverter::parseSizeT(opt->second));
+                id handle = (id)reinterpret_cast<void*>(StringConverter::parseSizeT(opt->second));
+                if ([handle isKindOfClass:[NSWindow class]]) {
+                  mWindow = (__bridge NSWindow*) handle;
+                }
+                else if ([handle isKindOfClass:[NSView class]]) {
+                  mWindow = (__bridge NSWindow*) [(NSView *)handle window];
+                }
                 assert( mWindow &&
                        "Unable to get a pointer to the parent NSWindow."
                        "Was the 'externalWindowHandle' parameter set correctly in the call to createRenderWindow()?");

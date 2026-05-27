@@ -52,6 +52,38 @@ elseif (WIN32)
 elseif(APPLE_IOS)
   # only works with GLES2 - no shared components here.
 elseif (APPLE)
+  # 1. Try to find Mesa via pkg-config
+  find_package(PkgConfig QUIET)
+  if(PKG_CONFIG_FOUND)
+    # Homebrew Mesa exports its OpenGL config via the 'gl' package
+    pkg_check_modules(MESA QUIET gl egl)
+  endif()
+
+  if(MESA_FOUND)
+    # 2. If Mesa is found, set OPENGL_gl_LIBRARY and include directories
+    message(STATUS "Found Homebrew Mesa via pkg-config at: ${MESA_PREFIX}")
+
+  list(APPEND _EGL_HEADERS "include/EGL/*.h")
+  list(APPEND _EGL_SOURCES "src/EGL/*.cpp")
+  list(APPEND _EGL_HEADERS "include/EGL/mesa/OgreOSX*.h")
+  list(APPEND _EGL_SOURCES "src/EGL/mesa/OgreOSX*.mm")
+  file(GLOB PLATFORM_HEADERS ${_EGL_HEADERS})
+  file(GLOB PLATFORM_SOURCES ${_EGL_SOURCES})
+  list(APPEND NATIVE_INCLUDES 
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/EGL
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/EGL/mesa
+    ${MESA_INCLUDE_DIRS}
+    )
+  add_compile_definitions(GL_GLEXT_PROTOTYPES=1)
+  add_compile_definitions(EGL_EGLEXT_PROTOTYPES=1)
+  add_definitions(-Wno-deprecated-declarations)
+  add_definitions(${MESA_CFLAGS_OTHER})
+  set(OPENGL_gl_LIBRARY "${MESA_LINK_LIBRARIES}")
+  set(PLATFORM_LIBS "-framework AppKit" "-framework QuartzCore" ${MESA_LDFLAGS})
+  else()
+    # 3. Fallback to standard Apple Framework configurations
+    message(STATUS "Mesa not found via pkg-config. Falling back to default native macOS configuration.")
+
   file(GLOB PLATFORM_HEADERS "include/OSX/*.h")
   file(GLOB PLATFORM_SOURCES "src/OSX/*.mm")
 
@@ -65,6 +97,7 @@ elseif (APPLE)
     ${CMAKE_CURRENT_SOURCE_DIR}/include/OSX 
     ${PROJECT_SOURCE_DIR}/OgreMain/include/OSX)
   set(PLATFORM_LIBS "-framework AppKit" ${OPENGL_gl_LIBRARY})
+  endif()
 elseif (UNIX)
   if(OGRE_GLSUPPORT_USE_EGL)
     list(APPEND _EGL_HEADERS "include/EGL/*.h")

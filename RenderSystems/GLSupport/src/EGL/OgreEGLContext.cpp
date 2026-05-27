@@ -99,7 +99,6 @@ namespace Ogre {
         setCurrent();
     }
     
-#if OGRE_PLATFORM == OGRE_PLATFORM_ANDROID
     void EGLContext::_updateInternalResources(EGLDisplay eglDisplay, ::EGLConfig glconfig, ::EGLSurface drawable)
     {
         mDrawable = drawable;
@@ -108,11 +107,12 @@ namespace Ogre {
 
         setCurrent();
 
+#if OGRE_PLATFORM == OGRE_PLATFORM_ANDROID
         // Initialise GL3W
         if (gleswInit())
             LogManager::getSingleton().logMessage("Failed to initialize GL3W");
-    }
 #endif
+    }
 
     void EGLContext::_destroyInternalResources()
     {
@@ -129,7 +129,10 @@ namespace Ogre {
 
     void EGLContext::setCurrent()
     {
-        if(eglGetCurrentSurface(EGL_DRAW) == mDrawable)
+        if(eglGetCurrentContext() == mContext && 
+           eglGetCurrentSurface(EGL_DRAW) == mDrawable && 
+           eglGetCurrentSurface(EGL_READ) == mDrawable &&
+           eglGetCurrentDisplay() == mEglDisplay)
             return;
 
         EGLBoolean ret = eglMakeCurrent(mEglDisplay,
@@ -138,6 +141,15 @@ namespace Ogre {
         if (!ret)
         {
             OGRE_EXCEPT(Exception::ERR_RENDERINGAPI_ERROR, "Fail to make context current");
+        }
+
+        EGLint egl_err = eglGetError();
+        if (egl_err != EGL_SUCCESS) {
+          LogManager::getSingleton().stream() << "eglMakeCurrent silently failed: " << egl_err;
+        } else {
+          ::EGLDisplay current_disp = eglGetCurrentDisplay();
+          ::EGLContext current_ctx = eglGetCurrentContext();
+          LogManager::getSingleton().stream() << "eglMakeCurrent success, display: " << current_disp << " context: " << current_ctx;
         }
     }
 
