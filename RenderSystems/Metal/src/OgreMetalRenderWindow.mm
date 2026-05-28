@@ -203,16 +203,18 @@ namespace Ogre
             if( opt != end )
             {
                 LogManager::getSingleton().logMessage("Mac Cocoa Window: Rendering on an external NSWindow*");
-                id handle = (id)reinterpret_cast<void*>(StringConverter::parseSizeT(opt->second));
+                id handle = (__bridge id)reinterpret_cast<void*>(StringConverter::parseSizeT(opt->second));
+                LogManager::getSingleton().stream() << "Class name: " << [NSStringFromClass([handle class]) UTF8String];
                 if ([handle isKindOfClass:[NSWindow class]]) {
-                  mWindow = (__bridge NSWindow*) handle;
+                  mWindow = (NSWindow*) handle;
                 }
                 else if ([handle isKindOfClass:[NSView class]]) {
-                  mWindow = (__bridge NSWindow*) [(NSView *)handle window];
+                  mWindow = (NSWindow*) [(NSView *)handle window];
                 }
                 assert( mWindow &&
                        "Unable to get a pointer to the parent NSWindow."
                        "Was the 'externalWindowHandle' parameter set correctly in the call to createRenderWindow()?");
+                LogManager::getSingleton().stream() << "mWindow: " << [[mWindow description] UTF8String];                
             }
 #endif
         }
@@ -313,3 +315,8 @@ namespace Ogre
         }
     }
 }
+
+// Local Variables:
+// mode: objc
+// tab-width: 2
+// End:
