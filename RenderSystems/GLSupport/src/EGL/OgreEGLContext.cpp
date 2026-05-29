@@ -149,7 +149,6 @@ namespace Ogre {
         } else {
           ::EGLDisplay current_disp = eglGetCurrentDisplay();
           ::EGLContext current_ctx = eglGetCurrentContext();
-          LogManager::getSingleton().stream() << "eglMakeCurrent success, display: " << current_disp << " context: " << current_ctx;
         }
     }
 

@@ -2,6 +2,24 @@
 // It is subject to the license terms in the LICENSE file found in the top-level directory
 // of this distribution and at https://www.ogre3d.org/licensing.
 
+vertex_program default_vp metal
+{
+    source DefaultShaders.metal
+    default_params
+    {
+        param_named_auto worldViewProj worldviewproj_matrix
+    }
+}
+
+fragment_program default_fp metal
+{
+    source DefaultShaders.metal
+    default_params
+    {
+        param_named_auto shadowColor shadow_colour
+    }
+}
+
 vertex_program Ogre/ShadowBlendVP glsl glsles hlsl glslang
 {
     source ShadowBlend.vert
@@ -39,3 +57,4 @@ vertex_program Ogre/ShadowExtrudeDirLightFinite glsl glsles hlsl
 {
     source ShadowExtrudeDirLightFinite.vert
 }
+
