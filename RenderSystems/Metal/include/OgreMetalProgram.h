@@ -34,8 +34,7 @@ THE SOFTWARE.
 #import <Metal/MTLLibrary.h>
 #import <Metal/MTLRenderPipeline.h>
 #import <Metal/MTLRenderCommandEncoder.h>
-
-@class MTLArgument;
+#import <Metal/MTLArgument.h> // Required for modern MTLBufferBinding protocol definitions
 
 namespace Ogre
 {
@@ -87,7 +86,13 @@ namespace Ogre
         GpuProgramParametersSharedPtr createParameters(void) override;
 
         /// Retrieve the Metal function object
-        id<MTLFunction> getMetalFunction(void) const    { return mFunction; }
+        id<MTLFunction> getMetalFunction(void) {
+          if (mFunction == nil && mCompiled) {
+            LogManager::getSingleton().logError("BUG DETECTED: mFunction nil even though mCompiled is true!");
+            compile(true);
+          }
+          return mFunction;
+        }
 
         /// Compile source into shader object
         bool compile(const bool checkErrors = false);
@@ -95,7 +100,7 @@ namespace Ogre
         void analyzeRenderParameters(void);
         static void autoFillDummyVertexAttributesForShader( id<MTLFunction> inVertexFunction,
                                                             MTLRenderPipelineDescriptor *outPsd );
-        void analyzeParameterBuffer( MTLArgument *arg );
+        void analyzeParameterBuffer( id<MTLBufferBinding> arg );
 
         static uint32 getAttributeIndex(VertexElementSemantic semantic);
 
@@ -120,8 +125,8 @@ namespace Ogre
         void parsePreprocessorDefinitions( NSMutableDictionary<NSString*, NSObject*> *inOutMacros );
 
     private:
-        id <MTLLibrary> mLibrary;
-        id <MTLFunction> mFunction;
+        __strong id <MTLLibrary> mLibrary;
+        __strong id <MTLFunction> mFunction;
 
         MetalDevice *mDevice;
 

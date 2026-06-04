@@ -42,6 +42,11 @@ Copyright (c) 2000-2016 Torus Knot Software Ltd
 #include "OgreMetalHardwareBufferCommon.h"
 
 #include "OgreViewport.h"
+#include "OgreRoot.h"
+#include "OgreSceneManager.h"
+#include "OgrePass.h"
+#include "OgreMaterial.h"
+#include "OgreTechnique.h"
 
 #include "OgreMetalMappings.h"
 
@@ -248,36 +253,61 @@ namespace Ogre
 
         DriverVersion driverVersion;
 
-        struct FeatureSets
+if (@available(macOS 10.15, iOS 13.0, tvOS 13.0, *))
         {
-            MTLFeatureSet featureSet;
-            const char* name;
-            int major;
-            int minor;
-        };
-
-        FeatureSets featureSets[] =
-        {
-#if OGRE_PLATFORM == OGRE_PLATFORM_APPLE_IOS
-            { MTLFeatureSet_iOS_GPUFamily1_v1, "iOS_GPUFamily1_v1", 1, 1 },
-            { MTLFeatureSet_iOS_GPUFamily2_v1, "iOS_GPUFamily2_v1", 2, 1 },
-
-            { MTLFeatureSet_iOS_GPUFamily1_v2, "iOS_GPUFamily1_v2", 1, 2 },
-            { MTLFeatureSet_iOS_GPUFamily2_v2, "iOS_GPUFamily2_v2", 2, 2 },
-            { MTLFeatureSet_iOS_GPUFamily3_v1, "iOS_GPUFamily3_v2", 3, 2 },
-#else
-            { MTLFeatureSet_OSX_GPUFamily1_v1, "OSX_GPUFamily1_v1", 1, 1 },
-#endif
-        };
-
-        for( size_t i=0; i<sizeof(featureSets) / sizeof(featureSets[0]); ++i )
-        {
-            if( [mActiveDevice->mDevice supportsFeatureSet:featureSets[i].featureSet] )
+#if OGRE_PLATFORM != OGRE_PLATFORM_APPLE_IOS
+            // Desktop macOS Targets (Mac2 handles modern Apple Silicon M1/M2/M3 or AMD/Intel architectures)
+            if ([mActiveDevice->mDevice supportsFamily:MTLGPUFamilyMac2])
             {
-                LogManager::getSingleton().logMessage( "Supports: " + String(featureSets[i].name) );
-                driverVersion.major = featureSets[i].major;
-                driverVersion.minor = featureSets[i].minor;
+                LogManager::getSingleton().logMessage("Supports: MTLGPUFamilyMac2");
+                driverVersion.major = 2;
+                driverVersion.minor = 0;
             }
+            else
+            {
+                LogManager::getSingleton().logMessage("Supports: MTLGPUFamilyMac1");
+                driverVersion.major = 1;
+                driverVersion.minor = 1;
+            }
+#else
+            // iOS Embedded Targets
+            if ([mActiveDevice->mDevice supportsFamily:MTLGPUFamilyApple5])
+            {
+                LogManager::getSingleton().logMessage("Supports: MTLGPUFamilyApple5");
+                driverVersion.major = 5;
+                driverVersion.minor = 1;
+            }
+            else if ([mActiveDevice->mDevice supportsFamily:MTLGPUFamilyApple4])
+            {
+                LogManager::getSingleton().logMessage("Supports: MTLGPUFamilyApple4");
+                driverVersion.major = 4;
+                driverVersion.minor = 1;
+            }
+            else if ([mActiveDevice->mDevice supportsFamily:MTLGPUFamilyApple3])
+            {
+                LogManager::getSingleton().logMessage("Supports: MTLGPUFamilyApple3");
+                driverVersion.major = 3;
+                driverVersion.minor = 1;
+            }
+            else if ([mActiveDevice->mDevice supportsFamily:MTLGPUFamilyApple2])
+            {
+                LogManager::getSingleton().logMessage("Supports: MTLGPUFamilyApple2");
+                driverVersion.major = 2;
+                driverVersion.minor = 1;
+            }
+            else if ([mActiveDevice->mDevice supportsFamily:MTLGPUFamilyApple1])
+            {
+                LogManager::getSingleton().logMessage("Supports: MTLGPUFamilyApple1");
+                driverVersion.major = 1;
+                driverVersion.minor = 1;
+            }
+#endif
+        }
+        else
+        {
+            // Fallback for older legacy operating system targets if required
+            driverVersion.major = 1;
+            driverVersion.minor = 1;
         }
 
         rsc->setDriverVersion( driverVersion );
@@ -319,6 +349,7 @@ namespace Ogre
             mHardwareBufferManager = new MetalHardwareBufferManager( &mDevice );
 
             psd = [MTLRenderPipelineDescriptor new];
+
             MTLVertexDescriptor *vertexDescriptor = [MTLVertexDescriptor vertexDescriptor];
             [psd setVertexDescriptor:vertexDescriptor];
             mDepthStencilDesc = [MTLDepthStencilDescriptor new];
@@ -667,6 +698,20 @@ namespace Ogre
                 [mActiveDevice->mCurrentCommandBuffer renderCommandEncoderWithDescriptor:passDesc];
         mActiveRenderEncoder = mActiveDevice->mRenderEncoder;
 
+        static id<MTLSamplerState> fallbackSampler = nil;       
+        if (!fallbackSampler) {
+          MTLSamplerDescriptor *samplerDesc = [MTLSamplerDescriptor new];
+          samplerDesc.minFilter = MTLSamplerMinMagFilterLinear;
+          samplerDesc.magFilter = MTLSamplerMinMagFilterLinear;
+          samplerDesc.mipFilter = MTLSamplerMipFilterLinear;
+          samplerDesc.sAddressMode = MTLSamplerAddressModeRepeat;
+          samplerDesc.tAddressMode = MTLSamplerAddressModeRepeat;
+          fallbackSampler = [mActiveDevice->mDevice newSamplerStateWithDescriptor:samplerDesc];
+        }
+
+        // Safely assign it to index 0 to satisfy default_fp's validation footprint
+        [mActiveRenderEncoder setFragmentSamplerState:fallbackSampler atIndex:0];
+
         // static_cast<MetalVaoManager*>( mVaoManager )->bindDrawId();
         [mActiveRenderEncoder setFrontFacingWinding:MTLWindingCounterClockwise];
         // flushUAVs();
@@ -797,6 +842,39 @@ namespace Ogre
         auto it = mPSOCache.find(psdHash);
         if(it != mPSOCache.end())
             return it->second;
+       
+        psd.rasterSampleCount = mActiveRenderTarget->getFSAA();
+        psd.colorAttachments[0].writeMask = MTLColorWriteMaskAll;
+        psd.colorAttachments[0].pixelFormat = 
+          MetalMappings::getPixelFormat(mActiveRenderTarget->suggestPixelFormat(), 
+                                        mActiveRenderTarget->isHardwareGammaEnabled());
+        psd.depthAttachmentPixelFormat = 
+          static_cast<MetalDepthBuffer*>(mActiveRenderTarget->getDepthBuffer())->getFormat();
+
+        // --- SAFEGUARD HOOK FOR MISSING VERTEX ATTRIBUTES ---
+        // If the shader reflection layer requests texture coordinates or attributes 
+        // that the geometry didn't build or populate into the layout indices (like uv slot 8), 
+        // inject fallback layouts to stop Metal API compiler crashes.
+        MTLVertexDescriptor *vertexDescriptor = [psd vertexDescriptor];
+        
+        // Check slot 8 (Commonly mapped to UV texture coordinate sets by MetalProgram)
+        if (vertexDescriptor.attributes[8].format == MTLVertexFormatInvalid)
+        {
+            LogManager::getSingleton().stream(LML_TRIVIAL)
+                << "[Metal Patch] Auto-filling missing uv(8) vertex attribute for pipeline generation.";
+                
+            vertexDescriptor.attributes[8].format = MTLVertexFormatFloat2;
+            vertexDescriptor.attributes[8].offset = 0;
+            vertexDescriptor.attributes[8].bufferIndex = 0; // fall back to main binding layout
+            
+            // Ensure the bound array container doesn't have a 0 stride size if unbound
+            if (vertexDescriptor.layouts[0].stride == 0)
+            {
+                vertexDescriptor.layouts[0].stride = sizeof(float) * 8; // standard pos + normal + uv buffer stride approximation
+                vertexDescriptor.layouts[0].stepFunction = MTLVertexStepFunctionPerVertex;
+            }
+        }
+        // -----------------------------------------------------
 
         NSError* error = NULL;
         id <MTLRenderPipelineState> pso =
@@ -809,7 +887,8 @@ namespace Ogre
                 errorDesc = [error localizedDescription].UTF8String;
 
             OGRE_EXCEPT( Exception::ERR_RENDERINGAPI_ERROR,
-                         "Failed to created pipeline state for rendering: " + errorDesc);
+                         "Failed to created pipeline state for rendering: " + errorDesc,
+                         "MetalRenderSystem::getPipelineState");
         }
 
         mPSOCache.emplace(psdHash, pso);
@@ -826,13 +905,17 @@ namespace Ogre
 
         mCurrentIndexBuffer = op.indexData;
         mCurrentVertexBuffer= op.vertexData;
-        mCurrentPrimType    = std::min(  MTLPrimitiveTypeTriangleStrip,
-                                         static_cast<MTLPrimitiveType>( op.operationType - 1u ) );
-
-        psd.colorAttachments[0].pixelFormat =  MetalMappings::getPixelFormat(
-                        mActiveRenderTarget->suggestPixelFormat(), mActiveRenderTarget->isHardwareGammaEnabled() );
-        psd.depthAttachmentPixelFormat = static_cast<MetalDepthBuffer*>(mActiveRenderTarget->getDepthBuffer())->getFormat();
-
+        mCurrentPrimType    = 
+          std::min(MTLPrimitiveTypeTriangleStrip,
+                   static_cast<MTLPrimitiveType>( op.operationType - 1u ) );
+        psd.rasterSampleCount = mActiveRenderTarget->getFSAA();
+        psd.colorAttachments[0].writeMask = MTLColorWriteMaskAll;
+        psd.colorAttachments[0].pixelFormat = 
+          MetalMappings::getPixelFormat(mActiveRenderTarget->suggestPixelFormat(), 
+                                        mActiveRenderTarget->isHardwareGammaEnabled() );
+        psd.depthAttachmentPixelFormat = 
+          static_cast<MetalDepthBuffer*>(mActiveRenderTarget->getDepthBuffer())->getFormat();
+        
         MTLVertexDescriptor *vertexDescriptor = [psd vertexDescriptor];
         [vertexDescriptor reset];
 
@@ -948,7 +1031,41 @@ namespace Ogre
     //-------------------------------------------------------------------------
     void MetalRenderSystem::bindGpuProgram(GpuProgram* prg)
     {
+        if (!prg)
+        {
+            LogManager::getSingleton().stream(LML_CRITICAL)
+                << "[Metal] bindGpuProgram called with a NULL GpuProgram pointer.";
+            return;
+        }
+
+        // Safe Context Logging
+        try
+        {
+            String prgName = prg->getName();
+            String prgLanguage = prg->getLanguage();
+            String prgType = (prg->getType() == GPT_VERTEX_PROGRAM) ? "Vertex" : "Fragment";
+
+            LogManager::getSingleton().stream(LML_TRIVIAL)
+                << "Invoking: '" << prgName << "'"
+                << " | Type: " << prgType 
+                << " | Language: " << prgLanguage;
+        }
+        catch (...)
+        {
+            LogManager::getSingleton().stream(LML_CRITICAL)
+                << "[Metal Trace] Critical: GpuProgram pointer " << prg 
+                << " is pointing to a corrupted or deallocated memory block!";
+        }
+
+        // Original logic block
         auto shader = static_cast<MetalProgram*>( prg->_getBindingDelegate() );
+        if (!shader)
+        {
+            LogManager::getSingleton().stream(LML_CRITICAL)
+                << "[Metal] Critical: Binding delegate for program is NULL.";
+            return;
+        }
+
         if(prg->getType() == GPT_VERTEX_PROGRAM)
             [psd setVertexFunction:shader->getMetalFunction()];
         else

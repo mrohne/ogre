@@ -25,6 +25,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 -----------------------------------------------------------------------------
 */
+#include <execinfo.h>
+
 #include "OgreMetalProgram.h"
 #include "OgreLogManager.h"
 #include "OgreMetalDevice.h"
@@ -137,6 +139,14 @@ namespace Ogre {
         // metal does not support runtime #includes. Also we want to use our Resource system
         mSource = _resolveIncludes(mSource, this, mFilename, true);
 
+        // prepend include and using
+        String preamble =
+          "#include <metal_stdlib>\n"
+          "using namespace metal;\n";
+        mSource = preamble + mSource;
+        LogManager::getSingleton().stream(LML_NORMAL) << "Compiling shader '" << mName << "'";
+        LogManager::getSingleton().stream(LML_TRIVIAL) << "Source code:\n" << mSource.c_str();
+        
         NSError *error;
         mLibrary = [mDevice->mDevice newLibraryWithSource:[NSString stringWithUTF8String:mSource.c_str()]
                                                   options:options
@@ -177,7 +187,7 @@ namespace Ogre {
 
         // Log a message that the shader compiled successfully.
         if( mCompiled && checkErrors )
-            LogManager::getSingleton().logMessage( "Shader " + mName + " compiled successfully." );
+            LogManager::getSingleton().logMessage( "Shader '" + mName + "' compiled successfully." );
 
         mCompileError = !mCompiled;
 
@@ -196,6 +206,7 @@ namespace Ogre {
     void MetalProgram::autoFillDummyVertexAttributesForShader( id<MTLFunction> vertexFunction,
                                                                MTLRenderPipelineDescriptor *psd )
     {
+        [psd setRasterSampleCount:4];
         if( [vertexFunction.vertexAttributes count] )
         {
             size_t maxSize = 0;
@@ -242,12 +253,17 @@ namespace Ogre {
         else
         {
             createParameterMappingStructures( true );
-            NSArray<MTLArgument*> *arguments = reflection.arguments;
+            NSArray<id<MTLBinding>> *bindings = reflection.bindings;
 
-            for( MTLArgument *arg in arguments )
+            for( id<MTLBinding> binding in bindings )
             {
-                if( arg.type == MTLArgumentTypeBuffer && arg.index >= UNIFORM_INDEX_START )
-                    analyzeParameterBuffer( arg );
+                if( binding.type == MTLBindingTypeBuffer && binding.index >= UNIFORM_INDEX_START )
+                {
+                    if ([binding conformsToProtocol:@protocol(MTLBufferBinding)])
+                    {
+                        analyzeParameterBuffer( (id<MTLBufferBinding>)binding );
+                    }
+                }
             }
         }
     }
@@ -255,7 +271,7 @@ namespace Ogre {
     void MetalProgram::analyzeRenderParameters(void)
     {
         MTLRenderPipelineDescriptor *psd = [[MTLRenderPipelineDescriptor alloc] init];
-        //[psd setSampleCount: 1];
+        [psd setRasterSampleCount:4];
 
         switch( mType )
         {
@@ -321,19 +337,24 @@ namespace Ogre {
         else
         {
             createParameterMappingStructures( true );
-            NSArray<MTLArgument*> *arguments =
-                    mType == GPT_VERTEX_PROGRAM ? reflection.vertexArguments :
-                                                  reflection.fragmentArguments;
+            NSArray<id<MTLBinding>> *bindings =
+                    mType == GPT_VERTEX_PROGRAM ? reflection.vertexBindings :
+                                                  reflection.fragmentBindings;
 
-            for( MTLArgument *arg in arguments )
+            for( id<MTLBinding> binding in bindings )
             {
-                if( arg.type == MTLArgumentTypeBuffer && arg.index >= UNIFORM_INDEX_START )
-                    analyzeParameterBuffer( arg );
+                if( binding.type == MTLBindingTypeBuffer && binding.index >= UNIFORM_INDEX_START )
+                {
+                    if ([binding conformsToProtocol:@protocol(MTLBufferBinding)])
+                    {
+                        analyzeParameterBuffer( (id<MTLBufferBinding>)binding );
+                    }
+                }
             }
         }
     }
     //-----------------------------------------------------------------------
-    void MetalProgram::analyzeParameterBuffer( MTLArgument *arg )
+    void MetalProgram::analyzeParameterBuffer( id<MTLBufferBinding> arg )
     {
         if( arg.bufferDataSize == 0 )
             return;
@@ -357,8 +378,6 @@ namespace Ogre {
                 GpuLogicalIndexUseMap::value_type(def.logicalIndex,
                 GpuLogicalIndexUse(def.physicalIndex,
                                     def.arraySize * def.elementSize, GPV_GLOBAL, BCT_UNKNOWN)));
-                mLogicalToPhysical->bufferSize += def.arraySize * def.elementSize;
-                mConstantDefs->bufferSize = mLogicalToPhysical->bufferSize;
 
                 String varName = arg.name.UTF8String;
 
@@ -398,22 +417,31 @@ namespace Ogre {
                 GpuLogicalIndexUseMap::value_type(def.logicalIndex,
                 GpuLogicalIndexUse(def.physicalIndex,
                                     def.arraySize * def.elementSize, GPV_GLOBAL, BCT_UNKNOWN)));
-                mLogicalToPhysical->bufferSize += def.arraySize * def.elementSize;
-                mConstantDefs->bufferSize = mLogicalToPhysical->bufferSize;
 
                 String varName = member.name.UTF8String;
 
                 mConstantDefs->map.insert( GpuConstantDefinitionMap::value_type( varName, def ) );
             }
         }
+        mLogicalToPhysical->bufferSize = arg.bufferDataSize / sizeof(float);
+        mConstantDefs->bufferSize = mLogicalToPhysical->bufferSize;
     }
     //-----------------------------------------------------------------------
     void MetalProgram::unloadHighLevelImpl(void)
     {
-        // Release everything
-        mLibrary = nil;
-        mFunction = nil;
-        mCompiled = false;
+      LogManager::getSingleton().stream(LML_CRITICAL) << "Unloading '" << mName << "'";
+      // Print a native backtrace to see exactly who called unload
+      void* callstack[128];
+      int frames = backtrace(callstack, 128);
+      char** strs = backtrace_symbols(callstack, frames);
+      for (int i = 0; i < frames; ++i) {
+        LogManager::getSingleton().stream(LML_NORMAL) << String(strs[i]);
+      }
+      free(strs);
+      // Release everything
+      mLibrary = nil;
+      mFunction = nil;
+      mCompiled = false;
     }
     //-----------------------------------------------------------------------
     void MetalProgram::buildConstantDefinitions(void)

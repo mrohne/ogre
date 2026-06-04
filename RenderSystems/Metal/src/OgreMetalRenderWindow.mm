@@ -159,10 +159,15 @@ namespace Ogre
                 }
                 else
                 {
-                    if( mFSAA > 1 )
-                        mColourAttachmentDesc.resolveTexture = mCurrentDrawable.texture;
-                    else
-                        mColourAttachmentDesc.texture = mCurrentDrawable.texture;
+                  if( mFSAA > 1 )
+                  {
+                    mColourAttachmentDesc.resolveTexture = mCurrentDrawable.texture;
+                    mColourAttachmentDesc.texture = mMsaaTex; 
+                  }
+                  else
+                  {
+                    mColourAttachmentDesc.texture = mCurrentDrawable.texture;
+                  }
                 }
             }
         }
@@ -247,15 +252,30 @@ namespace Ogre
         mMetalLayer = (CAMetalLayer*)mMetalView.layer;
         mMetalLayer.device      = mOwnerDevice->mDevice;
         mMetalLayer.pixelFormat = MetalMappings::getPixelFormat( mFormat, mHwGamma );
-
+        // mMetalLayer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+        // Prevents scaling interpolation stretching and ensures layout anchoring stays centered
+        mMetalLayer.contentsGravity = kCAGravityTopLeft;
+        mMetalLayer.autoresizingMask = kCALayerWidthSizable | kCALayerHeightSizable;
+        mMetalLayer.opaque = YES;
         //This is the default but if we wanted to perform compute
         //on the final rendering layer we could set this to no
         mMetalLayer.framebufferOnly = YES;
 
         this->init( nil, nil );
 
-#if OGRE_PLATFORM != OGRE_PLATFORM_APPLE_IOS
+#if OGRE_PLATFORM == OGRE_PLATFORM_APPLE_IOS
         checkLayerSizeChanges();
+#else
+        // Force immediate, robust Retina dimension scaling using the verified window property
+        CGFloat actualScale = mWindow.backingScaleFactor;
+        if (actualScale <= 0.0) actualScale = 2.0;
+
+        CGSize physicalSize = CGSizeMake(frame.size.width * actualScale, 
+                                         frame.size.height * actualScale);
+        
+        mMetalLayer.contentsScale = actualScale;
+        mMetalLayer.drawableSize = physicalSize;
+        mMetalView.layerSizeDidUpdate = NO;
 #endif
         windowMovedOrResized();
     }
