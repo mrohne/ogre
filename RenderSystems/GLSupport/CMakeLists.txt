@@ -56,47 +56,47 @@ elseif (APPLE)
   find_package(PkgConfig QUIET)
   if(PKG_CONFIG_FOUND)
     # Homebrew Mesa exports its OpenGL config via the 'gl' package
-    pkg_check_modules(MESA QUIET gl egl)
+    pkg_check_modules(MESA QUIET IMPORTED_TARGET gl egl)
   endif()
 
   if(MESA_FOUND)
     # 2. If Mesa is found, set OPENGL_gl_LIBRARY and include directories
-    message(STATUS "Found Homebrew Mesa via pkg-config at: ${MESA_PREFIX}")
+    message(STATUS "Found Homebrew Mesa via pkg-config at: ${MESA_gl_PREFIX}")
 
-  list(APPEND _EGL_HEADERS "include/EGL/*.h")
-  list(APPEND _EGL_SOURCES "src/EGL/*.cpp")
-  list(APPEND _EGL_HEADERS "include/EGL/mesa/OgreOSX*.h")
-  list(APPEND _EGL_SOURCES "src/EGL/mesa/OgreOSX*.mm")
-  file(GLOB PLATFORM_HEADERS ${_EGL_HEADERS})
-  file(GLOB PLATFORM_SOURCES ${_EGL_SOURCES})
-  list(APPEND NATIVE_INCLUDES 
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/EGL
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/EGL/mesa
-    ${MESA_INCLUDE_DIRS}
+    list(APPEND _EGL_HEADERS "include/EGL/*.h")
+    list(APPEND _EGL_SOURCES "src/EGL/*.cpp")
+    list(APPEND _EGL_HEADERS "include/EGL/mesa/OgreOSX*.h")
+    list(APPEND _EGL_SOURCES "src/EGL/mesa/OgreOSX*.mm")
+    file(GLOB PLATFORM_HEADERS ${_EGL_HEADERS})
+    file(GLOB PLATFORM_SOURCES ${_EGL_SOURCES})
+
+    set(NATIVE_INCLUDES 
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/EGL
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/EGL/mesa
     )
-  add_compile_definitions(GL_GLEXT_PROTOTYPES=1)
-  add_compile_definitions(EGL_EGLEXT_PROTOTYPES=1)
-  add_definitions(-Wno-deprecated-declarations)
-  add_definitions(${MESA_CFLAGS_OTHER})
-  set(OPENGL_gl_LIBRARY "${MESA_LINK_LIBRARIES}")
-  set(PLATFORM_LIBS "-framework AppKit" "-framework QuartzCore" ${MESA_LDFLAGS})
+
+    add_compile_definitions(GL_GLEXT_PROTOTYPES=1 EGL_EGLEXT_PROTOTYPES=1)
+    add_compile_options(-Wno-deprecated-declarations)
+
+    set(OPENGL_gl_LIBRARY PkgConfig::MESA)
+    set(PLATFORM_LIBS "-framework AppKit" "-framework QuartzCore" PkgConfig::MESA)
   else()
     # 3. Fallback to standard Apple Framework configurations
     message(STATUS "Mesa not found via pkg-config. Falling back to default native macOS configuration.")
 
-  file(GLOB PLATFORM_HEADERS "include/OSX/*.h")
-  file(GLOB PLATFORM_SOURCES "src/OSX/*.mm")
+    file(GLOB PLATFORM_HEADERS "include/OSX/*.h")
+    file(GLOB PLATFORM_SOURCES "src/OSX/*.mm")
 
-  # ignore usage of deprecated OSX API for now
-  add_definitions(-Wno-deprecated-declarations)
+    # ignore usage of deprecated OSX API for now
+    add_compile_options(-Wno-deprecated-declarations)
 
-  set_source_files_properties("src/OSX/OgreOSXGL3PlusSupport.mm" 
-    PROPERTIES COMPILE_FLAGS "-Wno-cast-qual")
+    set_source_files_properties("src/OSX/OgreOSXGL3PlusSupport.mm" 
+      PROPERTIES COMPILE_FLAGS "-Wno-cast-qual")
 
-  set(NATIVE_INCLUDES
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/OSX 
-    ${PROJECT_SOURCE_DIR}/OgreMain/include/OSX)
-  set(PLATFORM_LIBS "-framework AppKit" ${OPENGL_gl_LIBRARY})
+    set(NATIVE_INCLUDES
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/OSX 
+      ${PROJECT_SOURCE_DIR}/OgreMain/include/OSX)
+    set(PLATFORM_LIBS "-framework AppKit" ${OPENGL_gl_LIBRARY})
   endif()
 elseif (UNIX)
   if(OGRE_GLSUPPORT_USE_EGL)
@@ -162,15 +162,20 @@ add_library(OgreGLSupport STATIC
     src/OgreGLVertexArrayObject.cpp
     src/OgreGLWindow.cpp
 )
-target_link_libraries(OgreGLSupport PUBLIC OgreMain PRIVATE ${PLATFORM_LIBS})
-target_include_directories(OgreGLSupport PUBLIC 
-    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/GLSL>"
-    PRIVATE "$<BUILD_INTERFACE:${NATIVE_INCLUDES}>")
 
-  if(OGRE_USE_WAYLAND)
-    target_compile_definitions(OgreGLSupport PRIVATE OGRE_WAYLAND)
-  endif()
+target_link_libraries(OgreGLSupport PUBLIC OgreMain PRIVATE ${PLATFORM_LIBS})
+
+target_include_directories(OgreGLSupport 
+    PUBLIC 
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/GLSL>
+    PRIVATE 
+        ${NATIVE_INCLUDES}
+)
+
+if(OGRE_USE_WAYLAND)
+  target_compile_definitions(OgreGLSupport PRIVATE OGRE_WAYLAND)
+endif()
 
 set_property(TARGET OgreGLSupport PROPERTY POSITION_INDEPENDENT_CODE ON)
 generate_export_header(OgreGLSupport 
